@@ -29,10 +29,10 @@ func (u *User) ID() uuid.UUID {
 	return u.id
 }
 
-func (u *User) readPump(leaveChan chan<- *User, reqChan chan<- WSReq) {
+func (u *User) readPump(reqChan chan<- WSReq) {
 	defer func() {
-		leaveChan <- u
 		u.conn.Close()
+		fmt.Printf("read close: %s\n", u.id)
 	}()
 
 	u.conn.SetReadLimit(MaxMessageSize)
@@ -44,7 +44,7 @@ func (u *User) readPump(leaveChan chan<- *User, reqChan chan<- WSReq) {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				fmt.Printf("Unexpected close")
 			}
-			fmt.Printf("Client %s Read err: %s", u.Name(), err.Error())
+			fmt.Printf("client %s read err: %s\n", u.Name(), err.Error())
 			return
 		}
 
@@ -52,14 +52,15 @@ func (u *User) readPump(leaveChan chan<- *User, reqChan chan<- WSReq) {
 			msg, err := wsmessage.Unmarshal(p)
 			if err != nil {
 				fmt.Print("failed to unmarshal message")
-			}
+			} else {
 
-			input := WSReq{
-				Msg:    msg,
-				Sender: u,
-			}
+				input := WSReq{
+					Msg:    msg,
+					Sender: u,
+				}
 
-			reqChan <- input
+				reqChan <- input
+			}
 		}
 	}
 }
@@ -69,7 +70,7 @@ func (u *User) writePump(leaveChan chan<- *User) {
 	defer func() {
 		leaveChan <- u
 		ticker.Stop()
-		u.conn.Close()
+		fmt.Printf("write close: %s\n", u.id)
 	}()
 
 	for {

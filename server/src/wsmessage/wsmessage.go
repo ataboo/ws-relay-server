@@ -59,7 +59,7 @@ func Marshal(code uint16, rawPayload []byte) ([]byte, error) {
 	buffer = binary.LittleEndian.AppendUint16(buffer, code)
 
 	if rawPayload != nil {
-		copy(buffer[8:], rawPayload)
+		buffer = append(buffer, rawPayload...)
 	}
 
 	return buffer, nil

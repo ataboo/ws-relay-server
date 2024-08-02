@@ -3,8 +3,10 @@ package room
 import (
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"time"
 
+	"github.com/ataboo/rtc-game-buzzer/src/wsmessage"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -14,7 +16,8 @@ const (
 	ReadWait       = 3 * time.Second
 	WriteWait      = 3 * time.Second
 	PongWait       = 10 * time.Second
-	PingPeriod     = 5 * time.Second
+	PingPeriod     = 1 * time.Second
+	MaxNameLength  = 24
 )
 
 type Lobby struct {
@@ -38,11 +41,13 @@ func NewLobby() *Lobby {
 }
 
 func (l *Lobby) Start() {
-	func() {
-
+	go func() {
 		defer func() {
 			for _, u := range l.users {
-				close(u.writeChan)
+				if u.writeChan != nil {
+					close(u.writeChan)
+					u.writeChan = nil
+				}
 			}
 		}()
 
@@ -55,14 +60,59 @@ func (l *Lobby) Start() {
 			l.handleMsg(msg)
 		}
 	}()
+
+	go func() {
+		for {
+			u, ok := <-l.leaveChan
+			if !ok {
+				break
+			}
+
+			idx := slices.IndexFunc(l.users, func(usr *User) bool {
+				return u.ID() == usr.ID()
+			})
+
+			if idx < 0 {
+				fmt.Printf("failed to find user to remove\n")
+			} else {
+				l.users = append(l.users[:idx], l.users[idx+1:]...)
+
+				if u.writeChan != nil {
+					close(u.writeChan)
+					u.writeChan = nil
+				}
+			}
+		}
+	}()
 }
 
-func (l *Lobby) handleMsg(msg WSReq) {
-	fmt.Printf("got message: %d", msg.Msg.Code)
+func (l *Lobby) handleMsg(req WSReq) {
+	switch req.Msg.Code {
+	case wsmessage.CodeSetName:
+		l.handleSetName(req)
+	default:
+		fmt.Printf("unsupported code %d\n", req.Msg.Code)
+	}
+}
+
+func (l *Lobby) handleSetName(req WSReq) {
+	name := string(req.Msg.RawPayload)
+	if len(name) == 0 || len(name) > MaxNameLength {
+		fmt.Print("invalid name\n")
+		return
+	}
+
+	req.Sender.name = name
+
+	// broadcast name change
 }
 
 func (l *Lobby) Stop() {
-	close(l.msgChan)
+	fmt.Print("stop called\n")
+	if l.msgChan != nil {
+		close(l.msgChan)
+		l.msgChan = nil
+	}
 }
 
 func (l *Lobby) AddUser(conn *websocket.Conn) {
@@ -72,15 +122,18 @@ func (l *Lobby) AddUser(conn *websocket.Conn) {
 	}
 
 	u := &User{
-		id:   id,
-		conn: conn,
-		name: id.String(),
+		id:        id,
+		conn:      conn,
+		name:      id.String(),
+		writeChan: make(chan wsmessage.WSMessage),
 	}
 
 	l.users = append(l.users, u)
 
-	go u.readPump(l.leaveChan, l.msgChan)
+	go u.readPump(l.msgChan)
 	go u.writePump(l.leaveChan)
+
+	fmt.Printf("added user: %s\n", id)
 }
 
 // func (r *Lobby) JoinRoom(c *gin.Context, roomCode string, name string) int {

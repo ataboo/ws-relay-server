@@ -6,6 +6,7 @@ import (
 
 	"github.com/ataboo/rtc-game-buzzer/src/room"
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
 type JoinInput struct {
@@ -17,8 +18,17 @@ type HostInput struct {
 	Name string
 }
 
+var hostAuthKey = os.Getenv("HOST_AUTH_KEY")
+
+var roomList *room.Lobby
+
+var upgrader = &websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
+}
+
 func Start() {
-	hostAuthKey := os.Getenv("HOST_AUTH_KEY")
 	addr := os.Getenv("HOSTNAME")
 
 	r := gin.Default()
@@ -26,37 +36,19 @@ func Start() {
 		c.JSON(http.StatusOK, gin.H{"message": "pong"})
 	})
 
-	r.POST("/host", func(c *gin.Context) {
-		authHeader := c.Request.Header.Get("Authorization")
-		if authHeader != hostAuthKey {
-			c.JSON(http.StatusForbidden, gin.H{"message": "Not authorized"})
-			return
-		}
+	roomList = room.NewLobby()
 
-		input := HostInput{}
-		if err := c.BindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input"})
-			return
-		}
-
-		status := room.CreateRoom(c, input.Name)
-		if status != http.StatusOK {
-			c.JSON(status, gin.H{"message": "Failed to host"})
-		}
-	})
-
-	r.POST("/join", func(c *gin.Context) {
-		input := JoinInput{}
-		if err := c.BindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input"})
-			return
-		}
-
-		status := room.JoinRoom(c, input.RoomCode, input.Name)
-		if status != http.StatusOK {
-			c.JSON(status, gin.H{"message": "Failed to join"})
-		}
-	})
+	r.POST("/ws", handleWs)
 
 	r.RunTLS(addr, "cert.pem", "key.pem")
+}
+
+func handleWs(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, c.Request.Header)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "failed to upgrade"})
+		return
+	}
+
+	roomList.AddUser(conn)
 }

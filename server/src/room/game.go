@@ -1,93 +1,14 @@
 package room
 
-import (
-	"fmt"
-	"time"
-
-	"github.com/gorilla/websocket"
-)
-
-const (
-	MaxMessageSize = 2048
-	ReadWait       = 3 * time.Second
-	WriteWait      = 3 * time.Second
-	PongWait       = 10 * time.Second
-	PingPeriod     = 5 * time.Second
-)
-
-type WSMessage struct {
-	Content string
-	Sender  *Player
-}
-
 type Game struct {
-	Host      *Player
-	Players   []*Player
-	Locked    bool
-	msgChan   chan WSMessage
-	leaveChan chan *Player
+	Host    *Player
+	Players []*Player
+	Locked  bool
 }
 
 type Player struct {
-	IsHost    bool
-	Name      string
-	Conn      *websocket.Conn
-	WriteChan chan WSMessage
-}
-
-func (p *Player) readPump(leaveChan chan<- *Player, reqChan chan<- WSMessage) {
-	defer func() {
-		leaveChan <- p
-		p.Conn.Close()
-	}()
-
-	p.Conn.SetReadLimit(MaxMessageSize)
-	p.Conn.SetReadDeadline(time.Now().Add(PongWait))
-	p.Conn.SetPongHandler(func(string) error { p.Conn.SetReadDeadline(time.Now().Add(PongWait)); return nil })
-	for {
-		req := WSMessage{}
-		err := p.Conn.ReadJSON(req)
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				fmt.Printf("Unexpected close")
-			}
-			fmt.Printf("Client %s Read err: %s", p.Name, err.Error())
-			return
-		}
-		req.Sender = p
-
-		reqChan <- req
-	}
-}
-
-func (p *Player) writePump(leaveChan chan<- *Player) {
-	ticker := time.NewTicker(PingPeriod)
-	defer func() {
-		leaveChan <- p
-		ticker.Stop()
-		p.Conn.Close()
-	}()
-
-	for {
-		select {
-		case <-ticker.C:
-			p.Conn.SetWriteDeadline(time.Now().Add(WriteWait))
-			if err := p.Conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-				return
-			}
-		case res, ok := <-p.WriteChan:
-			if !ok {
-				p.Conn.SetWriteDeadline(time.Now().Add(WriteWait))
-				p.Conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
-			p.Conn.SetWriteDeadline(time.Now().Add(WriteWait))
-			if err := p.Conn.WriteJSON(res); err != nil {
-				return
-			}
-		}
-	}
+	IsHost bool
+	User   *User
 }
 
 func (g *Game) Start() {
@@ -99,19 +20,21 @@ func (g *Game) Stop() {
 }
 
 func (g *Game) AddPlayer(player *Player) error {
-	for _, p := range g.Players {
-		if p.Name == player.Name {
-			return fmt.Errorf("name duplicate")
-		}
-	}
+	// for _, p := range g.Players {
+	// 	if p.Name == player.Name {
+	// 		return fmt.Errorf("name duplicate")
+	// 	}
+	// }
 
-	if len(g.Players) == 0 {
-		g.Host = player
-	}
-	g.Players = append(g.Players, player)
+	// if len(g.Players) == 0 {
+	// 	g.Host = player
+	// }
+	// g.Players = append(g.Players, player)
 
-	go player.readPump(g.leaveChan, g.msgChan)
-	go player.writePump(g.leaveChan)
+	// go player.readPump(g.leaveChan, g.msgChan)
+	// go player.writePump(g.leaveChan)
+
+	// return nil
 
 	return nil
 }

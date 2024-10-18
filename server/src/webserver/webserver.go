@@ -1,10 +1,10 @@
-package server
+package webserver
 
 import (
 	"net/http"
 	"os"
 
-	"github.com/ataboo/rtc-game-buzzer/src/room"
+	"github.com/ataboo/rtc-game-buzzer/src/wsserver"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -20,7 +20,7 @@ type HostInput struct {
 
 var hostAuthKey = os.Getenv("HOST_AUTH_KEY")
 
-var roomList *room.Lobby
+var wsServer *wsserver.WSServer
 
 var upgrader = &websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -28,7 +28,7 @@ var upgrader = &websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-func Start() {
+func Start(gameFactory wsserver.GameFactory) {
 	addr := os.Getenv("HOSTNAME")
 
 	r := gin.Default()
@@ -36,7 +36,7 @@ func Start() {
 		c.JSON(http.StatusOK, gin.H{"message": "pong"})
 	})
 
-	roomList = room.NewLobby()
+	wsServer = wsserver.NewWsServer(gameFactory)
 
 	r.POST("/ws", handleWs)
 
@@ -50,5 +50,8 @@ func handleWs(c *gin.Context) {
 		return
 	}
 
-	roomList.AddUser(conn)
+	err = wsServer.AddUser(conn)
+	if err != nil {
+		conn.Close()
+	}
 }

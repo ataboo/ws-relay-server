@@ -2,19 +2,20 @@ package wsmessage
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+
+	"github.com/gorilla/websocket"
 )
 
 const version1 = uint16(1)
 
+const CurrentMsgVersion = version1
+
 const (
-	CodeSetName    = 1
-	CodeCreateRoom = 2
-	CodeJoinRoom   = 3
-	CodeLeaveRoom  = 4
-	CodeQuit       = 5
-	CodeBuzz       = 6
-	CodeReset      = 7
+	CodeWelcome = 1
+	CodeJoin    = 2
+	CodeGame    = 3
 )
 
 type WSMessage struct {
@@ -55,7 +56,7 @@ func Marshal(code uint16, rawPayload []byte) ([]byte, error) {
 
 	buffer := make([]byte, 0, bufferLen)
 	buffer = binary.LittleEndian.AppendUint32(buffer, uint32(bufferLen))
-	buffer = binary.LittleEndian.AppendUint16(buffer, version1)
+	buffer = binary.LittleEndian.AppendUint16(buffer, CurrentMsgVersion)
 	buffer = binary.LittleEndian.AppendUint16(buffer, code)
 
 	if rawPayload != nil {
@@ -63,4 +64,30 @@ func Marshal(code uint16, rawPayload []byte) ([]byte, error) {
 	}
 
 	return buffer, nil
+}
+
+func ParseMessageWithPayload(mType int, p []byte, messageType uint16, payloadStruct interface{}) error {
+	if mType != websocket.BinaryMessage {
+		return fmt.Errorf("unexpected message type")
+	}
+
+	msg, err := Unmarshal(p)
+	if err != nil {
+		return fmt.Errorf("malformed message")
+	}
+
+	if msg.Version != CurrentMsgVersion {
+		return fmt.Errorf("unexpected message version")
+	}
+
+	if msg.Code != messageType {
+		return fmt.Errorf("unexpected message type code")
+	}
+
+	payloadErr := json.Unmarshal(msg.RawPayload, &payloadStruct)
+	if payloadErr != nil {
+		return fmt.Errorf("failed to parse payload")
+	}
+
+	return nil
 }

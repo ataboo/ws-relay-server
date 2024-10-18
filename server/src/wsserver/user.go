@@ -1,6 +1,7 @@
-package room
+package wsserver
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -29,10 +30,46 @@ func (u *User) ID() uuid.UUID {
 	return u.id
 }
 
+func (u *User) handshake() (joinPayload wsmessage.JoinPayload, err error) {
+	joinPayload = wsmessage.JoinPayload{}
+
+	// 1. Server sends welcome to user with their assigned user id.
+	welcomePayload := wsmessage.WelcomePayload{UserId: u.id.String()}
+	welcomeBytes, err := json.Marshal(welcomePayload)
+	if err != nil {
+		return joinPayload, err
+	}
+	welcomeMsg, err := wsmessage.Marshal(wsmessage.CodeWelcome, welcomeBytes)
+	if err != nil {
+		return joinPayload, err
+	}
+
+	// 2. User responds by setting their user name and room code
+	u.conn.SetWriteDeadline(time.Now().Add(WriteWait))
+	if err := u.conn.WriteMessage(websocket.BinaryMessage, welcomeMsg); err != nil {
+		return joinPayload, err
+	}
+
+	u.conn.SetReadDeadline(time.Now().Add(ReadWait))
+	u.conn.SetReadLimit(MaxMessageSize)
+
+	mType, p, err := u.conn.ReadMessage()
+	if err != nil {
+		return joinPayload, err
+	}
+
+	err = wsmessage.ParseMessageWithPayload(mType, p, wsmessage.CodeJoin, &joinPayload)
+	if err != nil {
+		return joinPayload, err
+	}
+
+	return joinPayload, nil
+}
+
 func (u *User) readPump(reqChan chan<- WSReq) {
 	defer func() {
 		u.conn.Close()
-		fmt.Printf("read close: %s\n", u.id)
+		fmt.Printf("user read close: %s\n", u.id)
 	}()
 
 	u.conn.SetReadLimit(MaxMessageSize)

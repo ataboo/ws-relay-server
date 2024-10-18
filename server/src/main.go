@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/ataboo/rtc-game-buzzer/src/server"
+	"github.com/ataboo/rtc-game-buzzer/src/game"
+	"github.com/ataboo/rtc-game-buzzer/src/webserver"
 )
 
 func main() {
-	server.Start()
+	webserver.Start(game.NewTestGame)
 }

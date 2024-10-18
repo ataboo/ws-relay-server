@@ -1,43 +1,52 @@
-package room
+package wsserver
 
-type Game struct {
-	Host    *Player
-	Players []*Player
-	Locked  bool
+import (
+	"github.com/ataboo/rtc-game-buzzer/src/wsmessage"
+	"github.com/google/uuid"
+)
+
+type Game interface {
+	Start() error
+	Stop()
+	HandleMessage(wsmessage.WSMessage)
+	AddPlayer(player Player) error
+	RemovePlayer(id uuid.UUID) error
+	Done() chan struct{}
 }
 
 type Player struct {
+	ID     uuid.UUID
+	Name   string
 	IsHost bool
-	User   *User
 }
 
-func (g *Game) Start() {
+// func (g *Game) Start() {
 
-}
+// }
 
-func (g *Game) Stop() {
+// func (g *Game) Stop() {
 
-}
+// }
 
-func (g *Game) AddPlayer(player *Player) error {
-	// for _, p := range g.Players {
-	// 	if p.Name == player.Name {
-	// 		return fmt.Errorf("name duplicate")
-	// 	}
-	// }
+// func (g *Game) AddPlayer(player *Player) error {
+// 	// for _, p := range g.Players {
+// 	// 	if p.Name == player.Name {
+// 	// 		return fmt.Errorf("name duplicate")
+// 	// 	}
+// 	// }
 
-	// if len(g.Players) == 0 {
-	// 	g.Host = player
-	// }
-	// g.Players = append(g.Players, player)
+// 	// if len(g.Players) == 0 {
+// 	// 	g.Host = player
+// 	// }
+// 	// g.Players = append(g.Players, player)
 
-	// go player.readPump(g.leaveChan, g.msgChan)
-	// go player.writePump(g.leaveChan)
+// 	// go player.readPump(g.leaveChan, g.msgChan)
+// 	// go player.writePump(g.leaveChan)
 
-	// return nil
+// 	// return nil
 
-	return nil
-}
+// 	return nil
+// }
 
 // func NewWSClient(conn *websocket.Conn, id int, name string) *WSClient {
 // 	return &WSClient{

@@ -1,4 +1,4 @@
-package room
+package wsserver
 
 // func TestMakeRoomCode(t *testing.T) {
 // 	code := makeRoomCode()

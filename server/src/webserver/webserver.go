@@ -7,6 +7,7 @@ import (
 	"github.com/ataboo/rtc-game-buzzer/src/wsserver"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	log "github.com/sirupsen/logrus"
 )
 
 type JoinInput struct {
@@ -37,21 +38,24 @@ func Start(gameFactory wsserver.GameFactory) {
 	})
 
 	wsServer = wsserver.NewWsServer(gameFactory)
+	wsServer.Start()
 
-	r.POST("/ws", handleWs)
+	r.GET("/ws", handleWs)
 
 	r.RunTLS(addr, "cert.pem", "key.pem")
 }
 
 func handleWs(c *gin.Context) {
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, c.Request.Header)
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, c.Writer.Header())
 	if err != nil {
+		log.Warn("failed to upgrade WS")
 		c.JSON(http.StatusBadRequest, gin.H{"message": "failed to upgrade"})
 		return
 	}
 
 	err = wsServer.AddUser(conn)
 	if err != nil {
+		log.Debugf("failed to add user %s", err.Error())
 		conn.Close()
 	}
 }

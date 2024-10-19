@@ -8,14 +8,26 @@ import (
 	"time"
 
 	"github.com/ataboo/rtc-game-buzzer/src/wsmessage"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	log "github.com/sirupsen/logrus"
+)
+
+const (
+	MaxNameLength  = 12
+	MinNameLength  = 3
+	MaxMessageSize = 2048
+	ReadWait       = 3 * time.Second
+	WriteWait      = 3 * time.Second
+	PongWait       = 10 * time.Second
+	PingPeriod     = 1 * time.Second
 )
 
 type WSServer struct {
 	rooms       map[string]*Room
 	roomCodes   []string
 	gameFactory func() Game
+	users       map[uint16]*User
+	leaveChan   chan uint16
 }
 
 type GameFactory func() Game
@@ -27,27 +39,32 @@ var roomCodePattern = regexp.MustCompile(`^[A-Z]{6}$`)
 var randSrc = rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(time.Now().UnixNano())))
 
 func NewWsServer(gameFactory GameFactory) *WSServer {
-	l := &WSServer{
+	log.SetLevel(log.DebugLevel)
+
+	s := &WSServer{
 		rooms:       map[string]*Room{},
 		roomCodes:   []string{},
 		gameFactory: gameFactory,
+		users:       map[uint16]*User{},
+		leaveChan:   make(chan uint16),
 	}
 
-	return l
+	return s
 }
 
 func (w *WSServer) AddUser(conn *websocket.Conn) error {
-	id, err := uuid.NewUUID()
-	if err != nil {
-		panic(err)
-	}
+	id := w.getNextUserId()
 
 	u := &User{
-		id:        id,
-		conn:      conn,
-		name:      id.String(),
-		writeChan: make(chan wsmessage.WSMessage),
+		id:          id,
+		conn:        conn,
+		name:        "",
+		msgToUser:   make(chan *wsmessage.WSMessage),
+		msgFromUser: make(chan *wsmessage.WSMessage),
+		roomId:      "",
 	}
+
+	log.Debugf("started handshake with user '%d'", id)
 
 	joinPayload, err := u.handshake()
 	if err != nil {
@@ -60,6 +77,8 @@ func (w *WSServer) AddUser(conn *websocket.Conn) error {
 
 	u.name = joinPayload.Name
 
+	log.Debugf("user '%d' name '%s'", u.id, u.name)
+
 	var room *Room
 	if joinPayload.RoomCode == "" {
 		if len(w.rooms) >= MaxRoomCount {
@@ -71,7 +90,9 @@ func (w *WSServer) AddUser(conn *websocket.Conn) error {
 			return err
 		}
 
-		room = NewRoom(roomCode)
+		log.Debugf("creating new room '%s'", roomCode)
+
+		room = NewRoom(roomCode, w.gameFactory())
 		err = w.addRoom(room)
 		if err != nil {
 			return err
@@ -86,20 +107,79 @@ func (w *WSServer) AddUser(conn *websocket.Conn) error {
 			return fmt.Errorf("invalid room code")
 		}
 
+		log.Debugf("joining room %s", joinPayload.RoomCode)
+
 		room = oldRoom
 	}
 
-	err = room.AddUser(u)
+	u.roomId = room.Code
+
+	p := Player{
+		ID:            u.id,
+		Name:          u.name,
+		MsgToPlayer:   u.msgToUser,
+		MsgFromPlayer: u.msgFromUser,
+	}
+	err = room.AddPlayer(&p)
 	if err != nil {
 		return err
 	}
 
+	go u.readPump()
+	go u.writePump(w.leaveChan)
+
+	w.users[u.id] = u
+
+	log.Debugf("successfully added user %d", u.id)
+
 	return nil
+}
+
+func (w *WSServer) Start() <-chan struct{} {
+	stopChan := make(chan struct{})
+
+	go func() {
+		for {
+			id, ok := <-w.leaveChan
+			if !ok {
+				break
+			}
+
+			u := w.users[id]
+			r := w.rooms[u.roomId]
+
+			if r != nil {
+				r.RemovePlayer(id)
+
+				if len(r.Players()) == 0 {
+					r.Stop()
+				}
+			}
+
+			u.Stop()
+		}
+	}()
+
+	return stopChan
+}
+
+func (w *WSServer) getNextUserId() uint16 {
+	for i := uint16(1); i <= uint16(1<<16-1); i++ {
+		if _, ok := w.users[i]; !ok {
+			return i
+		}
+	}
+
+	panic("failed to get user id")
 }
 
 func (w *WSServer) Stop() {
 	for _, r := range w.rooms {
 		r.Stop()
+	}
+
+	for _, u := range w.users {
+		u.Stop()
 	}
 }
 
@@ -114,7 +194,12 @@ func (w *WSServer) addRoom(room *Room) error {
 
 	go func() {
 		<-roomStopChan
+		fmt.Printf("Stop chan fired!")
+		for _, p := range room.Players() {
+			w.users[p.ID].Stop()
+		}
 		w.removeRoom(room)
+		fmt.Printf("Room removed!")
 	}()
 
 	return nil
@@ -126,12 +211,10 @@ func (w *WSServer) removeRoom(room *Room) {
 	if codeIdx >= 0 {
 		w.roomCodes = append(w.roomCodes[:codeIdx], w.roomCodes[codeIdx+1:]...)
 	}
-
-	fmt.Printf("Room count: %d\n", len(w.rooms))
 }
 
 func (w *WSServer) userNameValid(userName string) bool {
-	if len(userName) < 3 || len(userName) > 12 {
+	if len(userName) < MinNameLength || len(userName) > MaxNameLength {
 		return false
 	}
 

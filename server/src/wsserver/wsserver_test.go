@@ -11,7 +11,6 @@ import (
 
 	"github.com/ataboo/rtc-game-buzzer/src/wsmessage"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -49,16 +48,11 @@ func TestHandshakeNewRoom(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = uuid.Parse(welcomePL.UserId)
-	if err != nil {
-		t.Error(err)
-	}
-
 	if len(server.rooms) != 0 {
 		t.Error("shouldn't be any rooms yet")
 	}
 
-	msg, _ := wsmessage.Marshal(wsmessage.CodeJoin, []byte(`{"name": "Player 1", "room_code": "", "game_type": 1}`))
+	msg, _ := wsmessage.Marshal(wsmessage.CodeJoin, 23, []byte(`{"name": "Player 1", "room_code": "", "game_type": 1}`))
 	client.WriteMessage(websocket.BinaryMessage, msg)
 
 	<-time.After(time.Millisecond * 10)
@@ -67,7 +61,7 @@ func TestHandshakeNewRoom(t *testing.T) {
 	// , err := client.ReadMessage()
 
 	room := server.rooms[server.roomCodes[0]]
-	user1 := room.users[welcomePL.UserId]
+	user1 := server.users[welcomePL.UserId]
 
 	if !server.roomCodeIsValid(room.Code) {
 		t.Error("unexpected room code")
@@ -85,7 +79,7 @@ func TestHandshakeNewRoom(t *testing.T) {
 func TestHandshakeExistingRoom(t *testing.T) {
 	server, srv, deferFunc := _setupTestServer(t)
 
-	err := server.addRoom(NewRoom("ABCDEF"))
+	err := server.addRoom(NewRoom("ABCDEF", server.gameFactory()))
 	if err != nil {
 		t.Error(err)
 	}
@@ -122,12 +116,7 @@ func TestHandshakeExistingRoom(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = uuid.Parse(welcomePL.UserId)
-	if err != nil {
-		t.Error(err)
-	}
-
-	msg, _ := wsmessage.Marshal(wsmessage.CodeJoin, []byte(`{"name": "Player 1", "room_code": "ABCDEF", "game_type": 1}`))
+	msg, _ := wsmessage.Marshal(wsmessage.CodeJoin, 23, []byte(`{"name": "Player 1", "room_code": "ABCDEF", "game_type": 1}`))
 	client.WriteMessage(websocket.BinaryMessage, msg)
 
 	<-time.After(time.Millisecond * 10)
@@ -140,7 +129,7 @@ func TestHandshakeExistingRoom(t *testing.T) {
 		t.Error("unexpected room code")
 	}
 
-	user1 := room.users[welcomePL.UserId]
+	user1 := server.users[welcomePL.UserId]
 
 	if user1.Name() != "Player 1" {
 		t.Errorf("unexpected name %s", user1.Name())
@@ -159,7 +148,8 @@ func TestHandshakeExistingRoom(t *testing.T) {
 }
 
 func _setupTestServer(t *testing.T) (server *WSServer, srv *httptest.Server, deferFunc func()) {
-	server = NewWsServer(nil)
+	server = NewWsServer(NewSimpleBroadcastGame)
+	server.Start()
 
 	gin.SetMode(gin.TestMode)
 

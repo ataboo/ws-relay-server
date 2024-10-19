@@ -2,22 +2,22 @@ package wsserver
 
 import (
 	"github.com/ataboo/rtc-game-buzzer/src/wsmessage"
-	"github.com/google/uuid"
 )
 
 type Game interface {
 	Start() error
 	Stop()
-	HandleMessage(wsmessage.WSMessage)
-	AddPlayer(player Player) error
-	RemovePlayer(id uuid.UUID) error
+	AddPlayer(player *Player) error
+	RemovePlayer(id uint16) error
 	Done() chan struct{}
+	Players() []*Player
 }
 
 type Player struct {
-	ID     uuid.UUID
-	Name   string
-	IsHost bool
+	ID            uint16
+	Name          string
+	MsgToPlayer   chan *wsmessage.WSMessage
+	MsgFromPlayer chan *wsmessage.WSMessage
 }
 
 // func (g *Game) Start() {

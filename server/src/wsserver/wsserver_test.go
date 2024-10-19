@@ -12,9 +12,12 @@ import (
 	"github.com/ataboo/rtc-game-buzzer/src/wsmessage"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	log "github.com/sirupsen/logrus"
 )
 
 func TestHandshakeNewRoom(t *testing.T) {
+	log.SetLevel(log.ErrorLevel)
+
 	server, srv, deferFunc := _setupTestServer(t)
 	url := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
 	client, _, err := websocket.DefaultDialer.Dial(url, nil)
@@ -52,8 +55,10 @@ func TestHandshakeNewRoom(t *testing.T) {
 		t.Error("shouldn't be any rooms yet")
 	}
 
-	msg, _ := wsmessage.Marshal(wsmessage.CodeJoin, 23, []byte(`{"name": "Player 1", "room_code": "", "game_type": 1}`))
-	client.WriteMessage(websocket.BinaryMessage, msg)
+	msg, _ := wsmessage.NewWsMessage(wsmessage.CodeJoin, 23, wsmessage.JoinPayload{Name: "Player 1", RoomCode: ""})
+	msgBytes, _ := wsmessage.Marshal(msg)
+
+	client.WriteMessage(websocket.BinaryMessage, msgBytes)
 
 	<-time.After(time.Millisecond * 10)
 
@@ -77,6 +82,8 @@ func TestHandshakeNewRoom(t *testing.T) {
 }
 
 func TestHandshakeExistingRoom(t *testing.T) {
+	log.SetLevel(log.ErrorLevel)
+
 	server, srv, deferFunc := _setupTestServer(t)
 
 	err := server.addRoom(NewRoom("ABCDEF", server.gameFactory()))
@@ -116,8 +123,10 @@ func TestHandshakeExistingRoom(t *testing.T) {
 		t.Error(err)
 	}
 
-	msg, _ := wsmessage.Marshal(wsmessage.CodeJoin, 23, []byte(`{"name": "Player 1", "room_code": "ABCDEF", "game_type": 1}`))
-	client.WriteMessage(websocket.BinaryMessage, msg)
+	msg, _ := wsmessage.NewWsMessage(wsmessage.CodeJoin, 23, wsmessage.JoinPayload{Name: "Player 1", RoomCode: "ABCDEF"})
+	msgBytes, _ := wsmessage.Marshal(msg)
+
+	client.WriteMessage(websocket.BinaryMessage, msgBytes)
 
 	<-time.After(time.Millisecond * 10)
 

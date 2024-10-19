@@ -20,7 +20,6 @@ type HostInput struct {
 }
 
 var hostAuthKey = os.Getenv("HOST_AUTH_KEY")
-
 var wsServer *wsserver.WSServer
 
 var upgrader = &websocket.Upgrader{
@@ -31,11 +30,25 @@ var upgrader = &websocket.Upgrader{
 
 func Start(gameFactory wsserver.GameFactory) {
 	addr := os.Getenv("HOSTNAME")
+	logLevelStr := os.Getenv("LOG_LEVEL")
+	if logLevelStr == "" {
+		logLevelStr = "debug"
+	}
+
+	logLevel, err := log.ParseLevel(logLevelStr)
+	if err != nil {
+		log.Errorf("invalid log level: %s", logLevelStr)
+		logLevel = log.InfoLevel
+	}
+
+	log.SetLevel(logLevel)
 
 	r := gin.Default()
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "pong"})
 	})
+
+	r.Static("static", "./dist")
 
 	wsServer = wsserver.NewWsServer(gameFactory)
 	wsServer.Start()

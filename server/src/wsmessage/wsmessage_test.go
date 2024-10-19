@@ -1,9 +1,8 @@
 package wsmessage
 
 import (
-	"fmt"
+	"os"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -21,11 +20,7 @@ func TestUnmarshal(t *testing.T) {
 		t.Errorf("unexpected msg code %d", msg.Code)
 	}
 
-	if msg.Length != 11 {
-		t.Errorf("unexpected msg length %d", msg.Length)
-	}
-
-	if msg.Version != version1 {
+	if msg.Version != Version1 {
 		t.Errorf("unexpected msg version %d", msg.Version)
 	}
 
@@ -39,7 +34,12 @@ func TestUnmarshal(t *testing.T) {
 }
 
 func TestMarshalNilPayload(t *testing.T) {
-	raw, err := Marshal(2, 23, nil)
+	msg, err := NewWsMessage(2, 23, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	raw, err := Marshal(msg)
 	if err != nil {
 		t.Error(err)
 	}
@@ -54,22 +54,34 @@ func TestMarshalNilPayload(t *testing.T) {
 }
 
 func TestMarshalPayload(t *testing.T) {
-	raw, err := Marshal(3, 23, []byte{1, 2, 3, 4})
+	msg := WSMessage{
+		Version:    Version1,
+		Code:       42,
+		Sender:     23,
+		RawPayload: []byte{1, 2, 3},
+	}
+
+	raw, err := Marshal(&msg)
 	if err != nil {
 		t.Error(err)
 	}
 
-	if len(raw) != 14 {
+	if len(raw) != 13 {
 		t.Errorf("unexpected len: %d", len(raw))
 	}
 
-	if !slices.Equal(raw, []byte{14, 0, 0, 0, 1, 0, 3, 0, 23, 0, 1, 2, 3, 4}) {
+	if !slices.Equal(raw, []byte{13, 0, 0, 0, 1, 0, 42, 0, 23, 0, 1, 2, 3}) {
 		t.Errorf("unexpected raw bytes %+v", raw)
 	}
 }
 
 func TestParseMessageWithPayload(t *testing.T) {
-	pbytes, err := Marshal(CodeWelcome, 23, []byte(`{"user_id": 23}`))
+	msg, err := NewWsMessage(CodeWelcome, 23, WelcomePayload{UserId: 23})
+	if err != nil {
+		t.Error(err)
+	}
+
+	pbytes, err := Marshal(msg)
 	if err != nil {
 		t.Error(err)
 
@@ -99,12 +111,17 @@ func TestParseMessageWithPayload(t *testing.T) {
 		t.Error("expected code err")
 	}
 
-	badPBytes, err := Marshal(CodeWelcome, 23, []byte(`{"badjson"}`))
+	msg, err = NewWsMessage(3, 23, []byte(`{"badjson"}`))
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = ParseMessageWithPayload(websocket.BinaryMessage, badPBytes, CodeWelcome, &outStruct)
+	badPBytes, err := Marshal(msg)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = ParseMessageWithPayload(websocket.BinaryMessage, badPBytes, CodeGame, &outStruct)
 	if err == nil || err.Error() != "failed to parse payload" {
 		t.Error("expected payload err")
 	}
@@ -120,13 +137,18 @@ func TestParseMessageWithPayload(t *testing.T) {
 }
 
 func TestFoo(t *testing.T) {
-	msg, _ := Marshal(CodeJoin, 23, []byte(`{"name": "ataboo", "room_code": ""}`))
-
-	sb := strings.Builder{}
-	for _, c := range msg {
-		sb.WriteString(fmt.Sprintf("%x ", c))
+	msg, err := NewWsMessage(CodeJoin, 23, &JoinPayload{Name: "ataboo", RoomCode: "MSFBEU"})
+	if err != nil {
+		t.Error(err)
 	}
 
-	t.Log(sb.String())
+	msgBytes, err := Marshal(msg)
+	if err != nil {
+		t.Error(err)
+	}
 
+	err = os.WriteFile("msg_bytes.bin", msgBytes, 0777)
+	if err != nil {
+		t.Error(err)
+	}
 }

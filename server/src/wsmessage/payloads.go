@@ -18,3 +18,7 @@ type PlayerPayload struct {
 	Name string `json:"name"`
 	Id   uint16 `json:"id"`
 }
+
+type PlayerChangePayload struct {
+	Players []PlayerPayload `json:"players"`
+}

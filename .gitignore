@@ -3,3 +3,6 @@
 cert.pem
 key.pem
 .env
+
+*.bin
+server/dist

@@ -39,8 +39,6 @@ var roomCodePattern = regexp.MustCompile(`^[A-Z]{6}$`)
 var randSrc = rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(time.Now().UnixNano())))
 
 func NewWsServer(gameFactory GameFactory) *WSServer {
-	log.SetLevel(log.DebugLevel)
-
 	s := &WSServer{
 		rooms:       map[string]*Room{},
 		roomCodes:   []string{},
@@ -66,7 +64,7 @@ func (w *WSServer) AddUser(conn *websocket.Conn) error {
 
 	log.Debugf("started handshake with user '%d'", id)
 
-	joinPayload, err := u.handshake()
+	joinPayload, err := w.handshake(u)
 	if err != nil {
 		return err
 	}
@@ -79,21 +77,11 @@ func (w *WSServer) AddUser(conn *websocket.Conn) error {
 
 	log.Debugf("user '%d' name '%s'", u.id, u.name)
 
-	var room *Room
-	if joinPayload.RoomCode == "" {
-		if len(w.rooms) >= MaxRoomCount {
-			return fmt.Errorf("max room count reached")
-		}
+	var room *Room = nil
+	roomCode := joinPayload.RoomCode
 
-		roomCode, err := w.generateRoomCode()
-		if err != nil {
-			return err
-		}
-
-		log.Debugf("creating new room '%s'", roomCode)
-
-		room = NewRoom(roomCode, w.gameFactory())
-		err = w.addRoom(room)
+	if roomCode == "" {
+		roomCode, err = w.generateRoomCode()
 		if err != nil {
 			return err
 		}
@@ -103,13 +91,23 @@ func (w *WSServer) AddUser(conn *websocket.Conn) error {
 		}
 
 		oldRoom, ok := w.rooms[joinPayload.RoomCode]
-		if !ok {
-			return fmt.Errorf("invalid room code")
+		if ok {
+			room = oldRoom
+		}
+	}
+
+	if room == nil {
+		if len(w.rooms) >= MaxRoomCount {
+			return fmt.Errorf("max room count reached")
 		}
 
-		log.Debugf("joining room %s", joinPayload.RoomCode)
+		log.Debugf("creating new room '%s'", roomCode)
 
-		room = oldRoom
+		room = NewRoom(roomCode, w.gameFactory())
+		err = w.addRoom(room)
+		if err != nil {
+			return err
+		}
 	}
 
 	u.roomId = room.Code
@@ -120,7 +118,7 @@ func (w *WSServer) AddUser(conn *websocket.Conn) error {
 		MsgToPlayer:   u.msgToUser,
 		MsgFromPlayer: u.msgFromUser,
 	}
-	err = room.AddPlayer(&p)
+	err = room.Game.AddPlayer(&p)
 	if err != nil {
 		return err
 	}
@@ -133,6 +131,55 @@ func (w *WSServer) AddUser(conn *websocket.Conn) error {
 	log.Debugf("successfully added user %d", u.id)
 
 	return nil
+}
+
+func (w *WSServer) handshake(u *User) (joinPayload wsmessage.JoinPayload, err error) {
+	joinPayload = wsmessage.JoinPayload{}
+
+	log.Debug("sending welcome message")
+
+	// 1. Server sends welcome to user with their assigned user id.
+	welcomePayload := wsmessage.WelcomePayload{UserId: u.id}
+	welcomeMsg, err := wsmessage.NewWsMessage(wsmessage.CodeWelcome, wsmessage.ServerSenderId, welcomePayload)
+	if err != nil {
+		log.Debug("failed to create welcome msg")
+		return joinPayload, err
+	}
+
+	msgBytes, err := wsmessage.Marshal(welcomeMsg)
+	if err != nil {
+		log.Debugf("failed to marshal welcome msg")
+		return joinPayload, err
+	}
+
+	// 2. User responds by setting their user name and room code
+	u.conn.SetWriteDeadline(time.Now().Add(WriteWait))
+	if err := u.conn.WriteMessage(websocket.BinaryMessage, msgBytes); err != nil {
+		log.Debug("failed to send welcome message")
+		return joinPayload, err
+	}
+
+	log.Debug("waiting for join message")
+
+	u.conn.SetReadDeadline(time.Now().Add(ReadWait))
+	u.conn.SetReadLimit(MaxMessageSize)
+
+	mType, p, err := u.conn.ReadMessage()
+	if err != nil {
+		log.Debug("failed to read join message")
+		return joinPayload, err
+	}
+
+	err = wsmessage.ParseMessageWithPayload(mType, p, wsmessage.CodeJoin, &joinPayload)
+	if err != nil {
+		log.Debug("failed to parse join message")
+		log.Debug(err)
+		return joinPayload, err
+	}
+
+	log.Debug("handshake successful")
+
+	return joinPayload, nil
 }
 
 func (w *WSServer) Start() <-chan struct{} {
@@ -149,10 +196,10 @@ func (w *WSServer) Start() <-chan struct{} {
 			r := w.rooms[u.roomId]
 
 			if r != nil {
-				r.RemovePlayer(id)
+				r.Game.RemovePlayer(id)
 
-				if len(r.Players()) == 0 {
-					r.Stop()
+				if r.Game.PlayerCount() == 0 {
+					r.Game.Stop()
 				}
 			}
 
@@ -175,7 +222,7 @@ func (w *WSServer) getNextUserId() uint16 {
 
 func (w *WSServer) Stop() {
 	for _, r := range w.rooms {
-		r.Stop()
+		r.Game.Stop()
 	}
 
 	for _, u := range w.users {
@@ -190,16 +237,20 @@ func (w *WSServer) addRoom(room *Room) error {
 
 	w.rooms[room.Code] = room
 	w.roomCodes = append(w.roomCodes, room.Code)
-	roomStopChan := room.Start()
+	err := room.Game.Start()
+	if err != nil {
+		return err
+	}
 
 	go func() {
-		<-roomStopChan
-		fmt.Printf("Stop chan fired!")
-		for _, p := range room.Players() {
-			w.users[p.ID].Stop()
+		<-room.Game.Done()
+		for _, u := range w.users {
+			if u.roomId == room.Code {
+				u.Stop()
+			}
 		}
 		w.removeRoom(room)
-		fmt.Printf("Room removed!")
+		log.Debugf("room %s cleaned up", room.Code)
 	}()
 
 	return nil
@@ -219,25 +270,4 @@ func (w *WSServer) userNameValid(userName string) bool {
 	}
 
 	return true
-}
-
-func (w *WSServer) roomCodeIsValid(roomCode string) bool {
-	return roomCodePattern.Match([]byte(roomCode))
-}
-
-func (w *WSServer) generateRoomCode() (string, error) {
-	for try := 0; try < 100; try++ {
-		code := make([]byte, CodeDigits)
-		for d := 0; d < CodeDigits; d++ {
-			code[d] = 'A' + byte(randSrc.IntN('Z'-'A'))
-		}
-
-		codeStr := string(code)
-
-		if _, ok := w.rooms[codeStr]; !ok {
-			return codeStr, nil
-		}
-	}
-
-	return "", fmt.Errorf("failed to generate room code")
 }

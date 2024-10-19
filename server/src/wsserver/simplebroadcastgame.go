@@ -26,24 +26,27 @@ func NewSimpleBroadcastGame() Game {
 }
 
 func (g *SimpleBroadcastGame) AddPlayer(player *Player) error {
-	for _, p := range g.players {
-		if p.Name == player.Name {
-			return fmt.Errorf("player name taken")
-		}
+	if g.userNameTaken(player.Name) {
+		return fmt.Errorf("player name taken")
 	}
 
 	g.players[player.ID] = player
 
 	go func() {
 		for {
-			msg := <-player.MsgFromPlayer
-			for _, p := range g.players {
-				if p.ID != player.ID {
-					p.MsgToPlayer <- msg
-				}
+			msg, ok := <-player.MsgFromPlayer
+			if !ok {
+				break
+			}
+
+			if msg.Code == wsmessage.CodeGame {
+				msg.Sender = player.ID
+				g.broadcast <- msg
 			}
 		}
 	}()
+
+	g.broadcastPlayerChange()
 
 	return nil
 }
@@ -60,14 +63,18 @@ func (g *SimpleBroadcastGame) Players() []*Player {
 	return playerSlice
 }
 
-func (g *SimpleBroadcastGame) Done() chan struct{} {
-	return g.doneChan
-}
-
 func (g *SimpleBroadcastGame) RemovePlayer(id uint16) error {
 	delete(g.players, id)
 
+	if g.PlayerCount() > 0 {
+		g.broadcastPlayerChange()
+	}
+
 	return nil
+}
+
+func (g *SimpleBroadcastGame) Done() chan struct{} {
+	return g.doneChan
 }
 
 func (g *SimpleBroadcastGame) Start() error {
@@ -79,7 +86,11 @@ func (g *SimpleBroadcastGame) Start() error {
 
 	go func() {
 		for {
-			msg := <-g.broadcast
+			msg, ok := <-g.broadcast
+			if !ok {
+				return
+			}
+
 			for _, p := range g.players {
 				p.MsgToPlayer <- msg
 			}
@@ -97,4 +108,39 @@ func (g *SimpleBroadcastGame) Stop() {
 	g.stopped = true
 	close(g.broadcast)
 	g.doneChan <- struct{}{}
+}
+
+func (g *SimpleBroadcastGame) PlayerCount() int {
+	return len(g.players)
+}
+
+func (g *SimpleBroadcastGame) broadcastPlayerChange() error {
+	pld := wsmessage.PlayerChangePayload{
+		Players: make([]wsmessage.PlayerPayload, g.PlayerCount()),
+	}
+
+	idx := 0
+	for _, p := range g.players {
+		pld.Players[idx] = wsmessage.PlayerPayload{Name: p.Name, Id: p.ID}
+		idx++
+	}
+
+	msg, err := wsmessage.NewWsMessage(wsmessage.CodeGame, wsmessage.ServerSenderId, pld)
+	if err != nil {
+		return err
+	}
+
+	g.broadcast <- msg
+
+	return nil
+}
+
+func (g *SimpleBroadcastGame) userNameTaken(userName string) bool {
+	for _, v := range g.players {
+		if v.Name == userName {
+			return true
+		}
+	}
+
+	return false
 }

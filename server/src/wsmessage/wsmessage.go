@@ -9,12 +9,13 @@ import (
 )
 
 const (
-	Version1          uint16 = 1
-	CurrentMsgVersion        = Version1
-	ServerSenderId    uint16 = 0
-	CodeWelcome       uint16 = 1
-	CodeJoin          uint16 = 2
-	CodeGame          uint16 = 3
+	Version1            uint16 = 1
+	CurrentMsgVersion          = Version1
+	ServerSenderId      uint16 = 0
+	CodeWelcome         uint16 = 1
+	CodeJoin            uint16 = 2
+	CodeBroadcast       uint16 = 3
+	CodeBroadcastOthers uint16 = 4
 )
 
 type WSMessage struct {
@@ -22,12 +23,13 @@ type WSMessage struct {
 	Version    uint16 // 2 bytes unsigned
 	Code       uint16 // 2 bytes unsigned
 	Sender     uint16 // 2 bytes unsigned
+	PayloadId  uint16 // 2 bytes unsigned
 	RawPayload []byte // ? bytes
 }
 
-const MsgHeaderLen uint32 = 4 + 2 + 2 + 2
+const MsgHeaderLen uint32 = 4 + 2 + 2 + 2 + 2
 
-func NewWsMessage(code uint16, sender uint16, payload interface{}) (*WSMessage, error) {
+func NewWsMessage(code uint16, sender uint16, payloadId uint16, payload interface{}) (*WSMessage, error) {
 	rawPayload := []byte{}
 	if payload != nil {
 		pldBytes, err := json.Marshal(payload)
@@ -46,6 +48,7 @@ func NewWsMessage(code uint16, sender uint16, payload interface{}) (*WSMessage, 
 		Version:    CurrentMsgVersion,
 		Code:       code,
 		Sender:     sender,
+		PayloadId:  payloadId,
 		RawPayload: rawPayload,
 	}, nil
 }
@@ -65,11 +68,12 @@ func Unmarshal(raw []byte) (*WSMessage, error) {
 		Version:    binary.LittleEndian.Uint16(raw[4:6]),
 		Code:       binary.LittleEndian.Uint16(raw[6:8]),
 		Sender:     binary.LittleEndian.Uint16(raw[8:10]),
+		PayloadId:  binary.LittleEndian.Uint16(raw[10:12]),
 		RawPayload: nil,
 	}
 
 	if int(msgLen) != len(raw) {
-		return nil, fmt.Errorf("invalid length")
+		return nil, fmt.Errorf("invalid length: %d, %d", msgLen, len(raw))
 	}
 
 	if msgLen > MsgHeaderLen {
@@ -90,6 +94,7 @@ func Marshal(msg *WSMessage) ([]byte, error) {
 	buffer = binary.LittleEndian.AppendUint16(buffer, CurrentMsgVersion)
 	buffer = binary.LittleEndian.AppendUint16(buffer, msg.Code)
 	buffer = binary.LittleEndian.AppendUint16(buffer, msg.Sender)
+	buffer = binary.LittleEndian.AppendUint16(buffer, msg.PayloadId)
 
 	if msg.RawPayload != nil {
 		buffer = append(buffer, msg.RawPayload...)
@@ -103,9 +108,11 @@ func ParseMessageWithPayload(mType int, p []byte, expectedCode uint16, payloadSt
 		return fmt.Errorf("unexpected message type")
 	}
 
+	fmt.Println(string(p))
+
 	msg, err := Unmarshal(p)
 	if err != nil {
-		return fmt.Errorf("malformed message")
+		return fmt.Errorf("malformed message: %s", err.Error())
 	}
 
 	if msg.Version != CurrentMsgVersion {

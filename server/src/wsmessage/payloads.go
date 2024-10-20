@@ -1,5 +1,11 @@
 package wsmessage
 
+const (
+	PldIdWelcome      = 1
+	PldIdJoin         = 2
+	PldIdPlayerChange = 3
+)
+
 type WelcomePayload struct {
 	UserId uint16 `json:"user_id"`
 }
@@ -9,16 +15,11 @@ type JoinPayload struct {
 	RoomCode string `json:"room_code"`
 }
 
-type RoomUpdatePayload struct {
-	RoomCode string          `json:"room_code"`
-	Players  []PlayerPayload `json:"players"`
+type PlayerChangePayload struct {
+	Players []PlayerPayload `json:"players"`
 }
 
 type PlayerPayload struct {
 	Name string `json:"name"`
 	Id   uint16 `json:"id"`
-}
-
-type PlayerChangePayload struct {
-	Players []PlayerPayload `json:"players"`
 }

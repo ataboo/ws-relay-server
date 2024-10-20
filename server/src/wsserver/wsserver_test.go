@@ -55,7 +55,7 @@ func TestHandshakeNewRoom(t *testing.T) {
 		t.Error("shouldn't be any rooms yet")
 	}
 
-	msg, _ := wsmessage.NewWsMessage(wsmessage.CodeJoin, 23, wsmessage.JoinPayload{Name: "Player 1", RoomCode: ""})
+	msg, _ := wsmessage.NewWsMessage(wsmessage.CodeJoin, 23, wsmessage.PldIdJoin, wsmessage.JoinPayload{Name: "Player 1", RoomCode: ""})
 	msgBytes, _ := wsmessage.Marshal(msg)
 
 	client.WriteMessage(websocket.BinaryMessage, msgBytes)
@@ -123,7 +123,7 @@ func TestHandshakeExistingRoom(t *testing.T) {
 		t.Error(err)
 	}
 
-	msg, _ := wsmessage.NewWsMessage(wsmessage.CodeJoin, 23, wsmessage.JoinPayload{Name: "Player 1", RoomCode: "ABCDEF"})
+	msg, _ := wsmessage.NewWsMessage(wsmessage.CodeJoin, 23, wsmessage.PldIdJoin, wsmessage.JoinPayload{Name: "Player 1", RoomCode: "ABCDEF"})
 	msgBytes, _ := wsmessage.Marshal(msg)
 
 	client.WriteMessage(websocket.BinaryMessage, msgBytes)

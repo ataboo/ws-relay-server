@@ -140,7 +140,7 @@ func (w *WSServer) handshake(u *User) (joinPayload wsmessage.JoinPayload, err er
 
 	// 1. Server sends welcome to user with their assigned user id.
 	welcomePayload := wsmessage.WelcomePayload{UserId: u.id}
-	welcomeMsg, err := wsmessage.NewWsMessage(wsmessage.CodeWelcome, wsmessage.ServerSenderId, welcomePayload)
+	welcomeMsg, err := wsmessage.NewWsMessage(wsmessage.CodeWelcome, wsmessage.ServerSenderId, wsmessage.PldIdWelcome, welcomePayload)
 	if err != nil {
 		log.Debug("failed to create welcome msg")
 		return joinPayload, err

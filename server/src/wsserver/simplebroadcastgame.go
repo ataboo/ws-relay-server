@@ -39,7 +39,7 @@ func (g *SimpleBroadcastGame) AddPlayer(player *Player) error {
 				break
 			}
 
-			if msg.Code == wsmessage.CodeGame {
+			if msg.Code == wsmessage.CodeBroadcast || msg.Code == wsmessage.CodeBroadcastOthers {
 				msg.Sender = player.ID
 				g.broadcast <- msg
 			}
@@ -92,7 +92,9 @@ func (g *SimpleBroadcastGame) Start() error {
 			}
 
 			for _, p := range g.players {
-				p.MsgToPlayer <- msg
+				if msg.Code == wsmessage.CodeBroadcast || p.ID != msg.Sender {
+					p.MsgToPlayer <- msg
+				}
 			}
 		}
 	}()
@@ -125,7 +127,7 @@ func (g *SimpleBroadcastGame) broadcastPlayerChange() error {
 		idx++
 	}
 
-	msg, err := wsmessage.NewWsMessage(wsmessage.CodeGame, wsmessage.ServerSenderId, pld)
+	msg, err := wsmessage.NewWsMessage(wsmessage.CodeBroadcast, wsmessage.ServerSenderId, wsmessage.PldIdPlayerChange, pld)
 	if err != nil {
 		return err
 	}

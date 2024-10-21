@@ -108,8 +108,6 @@ func ParseMessageWithPayload(mType int, p []byte, expectedCode uint16, payloadSt
 		return fmt.Errorf("unexpected message type")
 	}
 
-	fmt.Println(string(p))
-
 	msg, err := Unmarshal(p)
 	if err != nil {
 		return fmt.Errorf("malformed message: %s", err.Error())

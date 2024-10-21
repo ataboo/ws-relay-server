@@ -201,6 +201,8 @@ func (w *WSServer) Start() <-chan struct{} {
 				if r.Game.PlayerCount() == 0 {
 					r.Game.Stop()
 				}
+
+				delete(w.users, u.id)
 			}
 
 			u.Stop()

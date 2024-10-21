@@ -99,8 +99,8 @@ func TestParseMessageWithPayload(t *testing.T) {
 	}
 
 	err = ParseMessageWithPayload(websocket.BinaryMessage, []byte{0x23}, CodeBroadcast, &outStruct)
-	if err == nil || err.Error() != "malformed message" {
-		t.Error("expected malformed err")
+	if err == nil || err.Error() != "malformed message: invalid format" {
+		t.Error("expected malformed err", err.Error())
 	}
 
 	pBytesWrongVersion := make([]byte, len(pbytes))
@@ -113,7 +113,7 @@ func TestParseMessageWithPayload(t *testing.T) {
 
 	err = ParseMessageWithPayload(websocket.BinaryMessage, pbytes, CodeBroadcast, &outStruct)
 	if err == nil || err.Error() != "unexpected message type code" {
-		t.Error("expected code err")
+		t.Error("expected code err", err)
 	}
 
 	msg, err = NewWsMessage(3, 23, PldIdWelcome, []byte(`{"badjson"}`))

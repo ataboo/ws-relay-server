@@ -97,6 +97,8 @@ func (u *User) writePump(leave chan<- uint16) {
 			if err := u.conn.WriteMessage(websocket.BinaryMessage, msgBytes); err != nil {
 				return
 			}
+
+			log.Debugf("%d sent to %d", msg.PayloadId, u.id)
 		}
 	}
 }

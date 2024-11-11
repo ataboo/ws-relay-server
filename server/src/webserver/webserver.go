@@ -1,9 +1,12 @@
 package webserver
 
 import (
+	"fmt"
 	"net/http"
 	"os"
+	"path"
 
+	"github.com/ataboo/rtc-game-buzzer/src/internal/common"
 	"github.com/ataboo/rtc-game-buzzer/src/wsserver"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -29,11 +32,15 @@ var upgrader = &websocket.Upgrader{
 }
 
 func Start(gameFactory wsserver.GameFactory) {
+	common.LoadDotEnv()
+
 	addr := os.Getenv("HOSTNAME")
 	logLevelStr := os.Getenv("LOG_LEVEL")
 	if logLevelStr == "" {
 		logLevelStr = "debug"
 	}
+
+	fmt.Print("addr", addr)
 
 	logLevel, err := log.ParseLevel(logLevelStr)
 	if err != nil {
@@ -48,14 +55,19 @@ func Start(gameFactory wsserver.GameFactory) {
 		c.JSON(http.StatusOK, gin.H{"message": "pong"})
 	})
 
-	r.Static("static", "./dist")
+	r.Static("static", "./static")
 
 	wsServer = wsserver.NewWsServer(gameFactory)
 	wsServer.Start()
 
 	r.GET("/ws", handleWs)
 
-	r.RunTLS(addr, "cert.pem", "key.pem")
+	certPath, err := common.GetAndMakeLocalDir("certs")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	r.RunTLS(addr, path.Join(certPath, "ws-relay-server.pem.pub"), path.Join(certPath, "ws-relay-server.pem"))
 }
 
 func handleWs(c *gin.Context) {
